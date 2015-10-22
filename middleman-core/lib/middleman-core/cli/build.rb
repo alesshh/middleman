@@ -39,6 +39,10 @@ module Middleman::Cli
                   type: :boolean,
                   default: false,
                   desc: 'Generate profiling report for the build'
+    method_option :resources,
+                  type: :array,
+                  default: nil,
+                  desc: 'Build only defined resources'
 
     # Core build Thor command
     # @return [void]
@@ -64,6 +68,7 @@ module Middleman::Cli
       opts = {}
       opts[:glob]  = options['glob'] if options.key?('glob')
       opts[:clean] = options['clean']
+      opts[:resources] = options['resources']
 
       self.class.shared_instance.run_hook :before_build, self
 
@@ -134,6 +139,14 @@ module Middleman::Cli
     # Remove files which were not built in this cycle
     # @return [void]
     def clean!
+     # Remove files which were not defined in the sitemap
+      @app.sitemap.resources.each do |resource|
+        path = @build_dir + resource.destination_path.gsub('%20', ' ')
+        @to_clean.delete_if do |r|
+          r.to_s.match(/#{path}/)
+        end
+      end
+
       @to_clean.each do |f|
         base.remove_file f, force: true
       end
@@ -179,13 +192,25 @@ module Middleman::Cli
     # Actually build the app
     # @return [void]
     def execute!
+      resources = @app.sitemap.resources
+
+      # Filter defined resources
+      if config[:resources]
+        resources = resources.select do |resource|
+          config[:resources].any? do |r|
+            resource.destination_path.match(Regexp.new(r.to_s))
+          end
+        end
+      end
+
+
       # Sort order, images, fonts, js/css and finally everything else.
       sort_order = %w(.png .jpeg .jpg .gif .bmp .svg .svgz .ico .webp .woff .woff2 .otf .ttf .eot .js .css)
 
       # Pre-request CSS to give Compass a chance to build sprites
       logger.debug '== Prerendering CSS'
 
-      @app.sitemap.resources.select do |resource|
+      resources.select do |resource|
         resource.ext == '.css'
       end.each(&method(:build_resource))
 
@@ -201,7 +226,7 @@ module Middleman::Cli
 
       logger.debug '== Building files'
 
-      resources = @app.sitemap.resources.sort_by do |r|
+      resources = resources.sort_by do |r|
         sort_order.index(r.ext) || 100
       end
 
