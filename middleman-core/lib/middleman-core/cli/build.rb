@@ -141,10 +141,11 @@ module Middleman::Cli
     def clean!
      # Remove files which were not defined in the sitemap
       @app.sitemap.resources.each do |resource|
-        path = @build_dir + resource.destination_path.gsub('%20', ' ')
-        @to_clean.delete_if do |r|
-          r.to_s.match(/#{path}/)
-        end
+        path = resource.destination_path.gsub('%20', ' ')
+        path = File.expand_path(path, @build_dir)
+
+        @to_clean.delete Pathname.new(path)
+        @to_clean.delete Pathname.new(path + ".gz")
       end
 
       @to_clean.each do |f|
@@ -196,10 +197,10 @@ module Middleman::Cli
 
       # Filter defined resources
       if config[:resources]
+        matchers = config[:resources].map { |r| Regexp.new(r.to_s) }
+
         resources = resources.select do |resource|
-          config[:resources].any? do |r|
-            resource.destination_path.match(Regexp.new(r.to_s))
-          end
+          matchers.any? { |matcher| resource.destination_path.match(matcher) }
         end
       end
 
